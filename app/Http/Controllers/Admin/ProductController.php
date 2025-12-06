@@ -194,30 +194,22 @@ class ProductController extends Controller
 
             // Handle attributes
             if (!empty($validated['attributes'])) {
-                \Log::info('Processing attributes:', ['attributes' => $validated['attributes']]);
-                
-                foreach ($validated['attributes'] as $index => $attrData) {
-                    \Log::info("Processing attribute index {$index}:", $attrData);
-                    
+                foreach ($validated['attributes'] as $attrData) {
                     // Check if marked for deletion
                     if (isset($attrData['deleted']) && $attrData['deleted'] == '1') {
-                        \Log::info("Attribute marked for deletion", ['id' => $attrData['id'] ?? 'null']);
                         // Only delete if it has an ID (existing record)
                         if (!empty($attrData['id'])) {
-                            $deleted = ProductAttribute::where('id', $attrData['id'])
+                            ProductAttribute::where('id', $attrData['id'])
                                 ->where('product_id', $product->id)
                                 ->delete();
-                            \Log::info("Deleted attribute", ['id' => $attrData['id'], 'result' => $deleted]);
                         }
-                        // Skip to next iteration
                         continue;
                     }
 
                     // Update existing or create new
                     if (!empty($attrData['id'])) {
                         // Update existing attribute
-                        \Log::info("Updating existing attribute", ['id' => $attrData['id']]);
-                        $updated = ProductAttribute::where('id', $attrData['id'])
+                        ProductAttribute::where('id', $attrData['id'])
                             ->where('product_id', $product->id)
                             ->update([
                                 'size' => $attrData['size'] ?? null,
@@ -225,18 +217,15 @@ class ProductController extends Controller
                                 'price' => $attrData['price'],
                                 'quantity' => $attrData['quantity'],
                             ]);
-                        \Log::info("Update result", ['affected_rows' => $updated]);
                     } else {
-                        // Create new attribute (only if not marked for deletion)
-                        \Log::info("Creating new attribute");
-                        $newAttr = ProductAttribute::create([
+                        // Create new attribute
+                        ProductAttribute::create([
                             'product_id' => $product->id,
                             'size' => $attrData['size'] ?? null,
                             'color' => $attrData['color'] ?? null,
                             'price' => $attrData['price'],
                             'quantity' => $attrData['quantity'],
                         ]);
-                        \Log::info("Created attribute", ['id' => $newAttr->id]);
                     }
                 }
             }
