@@ -41,70 +41,78 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        // Validate dữ liệu
+        $validated = $request->validate([
             'product_name' => 'required|string|max:191',
             'category_id' => 'required|exists:categories,id',
             'description' => 'nullable|string',
             'base_price' => 'required|numeric|min:0',
-            
-            // Images
-            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'main_image_index' => 'nullable|integer',
-            
-            // Attributes
-            'attributes.*.size' => 'nullable|string|max:50',
-            'attributes.*.color' => 'nullable|string|max:50',
+            'images.*' => 'nullable|image|mimes:jpg,jpeg,png,gif|max:2048',
+            'attributes' => 'required|array|min:1',
             'attributes.*.price' => 'required|numeric|min:0',
             'attributes.*.quantity' => 'required|integer|min:0',
+            'attributes.*.size' => 'nullable|string|max:50',
+            'attributes.*.color' => 'nullable|string|max:50',
         ]);
 
-        DB::beginTransaction();
-        
         try {
-            // Tạo product
+            // Bắt đầu transaction
+            DB::beginTransaction();
+
+            // Tạo sản phẩm
             $product = Product::create([
-                'product_name' => $request->product_name,
-                'category_id' => $request->category_id,
-                'description' => $request->description,
-                'base_price' => $request->base_price,
+                'product_name' => $validated['product_name'],
+                'category_id' => $validated['category_id'],
+                'description' => $validated['description'] ?? null,
+                'base_price' => $validated['base_price'],
             ]);
 
-            // Upload images
+            // Xử lý upload ảnh
             if ($request->hasFile('images')) {
-                $mainImageIndex = $request->main_image_index ?? 0;
+                $mainImageIndex = $request->input('main_image_index', 0);
                 
                 foreach ($request->file('images') as $index => $image) {
+                    // Lưu file vào storage/app/public/products
                     $path = $image->store('products', 'public');
                     
+                    // Lưu vào database - SỬA TỪ image_path THÀNH image_url
                     ProductImage::create([
                         'product_id' => $product->id,
-                        'image_url' => $path,
-                        'is_main' => $index == $mainImageIndex,
+                        'image_url' => $path,  // ← ĐÃ SỬA
+                        'is_main' => ($index == $mainImageIndex) ? 1 : 0,
                     ]);
                 }
             }
 
-            // Tạo attributes
-            if ($request->has('attributes')) {
-                foreach ($request->attributes as $attr) {
-                    ProductAttribute::create([
-                        'product_id' => $product->id,
-                        'size' => $attr['size'] ?? null,
-                        'color' => $attr['color'] ?? null,
-                        'price' => $attr['price'],
-                        'quantity' => $attr['quantity'],
-                    ]);
+            // Lưu các phân loại (attributes/variants)
+            if (!empty($validated['attributes'])) {
+                foreach ($validated['attributes'] as $attribute) {
+                    // Chỉ lưu nếu có đủ giá và số lượng
+                    if (isset($attribute['price']) && isset($attribute['quantity'])) {
+                        ProductAttribute::create([
+                            'product_id' => $product->id,
+                            'size' => !empty($attribute['size']) ? $attribute['size'] : null,
+                            'color' => !empty($attribute['color']) ? $attribute['color'] : null,
+                            'price' => $attribute['price'],
+                            'quantity' => $attribute['quantity'],
+                        ]);
+                    }
                 }
             }
 
+            // Commit transaction
             DB::commit();
 
             return redirect()->route('admin.products.index')
-                ->with('success', 'Thêm sản phẩm thành công!');
+                ->with('success', 'Sản phẩm đã được thêm thành công!');
 
         } catch (\Exception $e) {
+            // Rollback nếu có lỗi
             DB::rollBack();
-            return back()->with('error', 'Có lỗi xảy ra: ' . $e->getMessage());
+            
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Có lỗi xảy ra: ' . $e->getMessage());
         }
     }
 
@@ -121,97 +129,89 @@ class ProductController extends Controller
         return view('admin.products.edit', compact('product', 'categories'));
     }
 
-    public function update(Request $request, Product $product)
+    public function update(Request $request, $id)
     {
         $request->validate([
             'product_name' => 'required|string|max:191',
             'category_id' => 'required|exists:categories,id',
-            'description' => 'nullable|string',
             'base_price' => 'required|numeric|min:0',
-            
-            // Images
-            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'main_image_index' => 'nullable|integer',
-            
-            // Attributes
-            'attributes.*.id' => 'nullable|exists:product_attributes,id',
-            'attributes.*.size' => 'nullable|string|max:50',
-            'attributes.*.color' => 'nullable|string|max:50',
+            'attributes' => 'required|array|min:1',
             'attributes.*.price' => 'required|numeric|min:0',
             'attributes.*.quantity' => 'required|integer|min:0',
         ]);
-
-        DB::beginTransaction();
         
-        try {
-            // Cập nhật product
-            $product->update([
-                'product_name' => $request->product_name,
-                'category_id' => $request->category_id,
-                'description' => $request->description,
-                'base_price' => $request->base_price,
-            ]);
-
-            // Xử lý images mới
-            if ($request->hasFile('images')) {
-                $mainImageIndex = $request->main_image_index ?? 0;
-                
-                foreach ($request->file('images') as $index => $image) {
-                    $path = $image->store('products', 'public');
-                    
-                    ProductImage::create([
-                        'product_id' => $product->id,
-                        'image_url' => $path,
-                        'is_main' => $index == $mainImageIndex,
+        $product = Product::findOrFail($id);
+        
+        // Update basic info
+        $product->update([
+            'product_name' => $request->product_name,
+            'category_id' => $request->category_id,
+            'description' => $request->description,
+            'base_price' => $request->base_price,
+        ]);
+        
+        // Handle attributes
+        $existingAttributeIds = [];
+        
+        foreach ($request->attributes as $attrData) {
+            if (isset($attrData['_destroy']) && $attrData['_destroy'] == '1') {
+                // Xóa attribute
+                if (isset($attrData['id'])) {
+                    ProductAttribute::where('id', $attrData['id'])
+                        ->where('product_id', $product->id)
+                        ->delete();
+                }
+                continue;
+            }
+            
+            if (isset($attrData['id']) && $attrData['id']) {
+                // Update attribute cũ
+                ProductAttribute::where('id', $attrData['id'])
+                    ->where('product_id', $product->id)
+                    ->update([
+                        'size' => $attrData['size'] ?? null,
+                        'color' => $attrData['color'] ?? null,
+                        'price' => $attrData['price'],
+                        'quantity' => $attrData['quantity'],
                     ]);
-                }
+                $existingAttributeIds[] = $attrData['id'];
+            } else {
+                // Tạo attribute mới
+                $newAttr = ProductAttribute::create([
+                    'product_id' => $product->id,
+                    'size' => $attrData['size'] ?? null,
+                    'color' => $attrData['color'] ?? null,
+                    'price' => $attrData['price'],
+                    'quantity' => $attrData['quantity'],
+                ]);
+                $existingAttributeIds[] = $newAttr->id;
             }
-
-            // Cập nhật attributes
-            if ($request->has('attributes')) {
-                $existingIds = [];
-                
-                foreach ($request->attributes as $attr) {
-                    if (isset($attr['id'])) {
-                        // Cập nhật existing
-                        $attribute = ProductAttribute::find($attr['id']);
-                        if ($attribute) {
-                            $attribute->update([
-                                'size' => $attr['size'] ?? null,
-                                'color' => $attr['color'] ?? null,
-                                'price' => $attr['price'],
-                                'quantity' => $attr['quantity'],
-                            ]);
-                            $existingIds[] = $attr['id'];
-                        }
-                    } else {
-                        // Tạo mới
-                        $newAttr = ProductAttribute::create([
-                            'product_id' => $product->id,
-                            'size' => $attr['size'] ?? null,
-                            'color' => $attr['color'] ?? null,
-                            'price' => $attr['price'],
-                            'quantity' => $attr['quantity'],
-                        ]);
-                        $existingIds[] = $newAttr->id;
-                    }
-                }
-
-                // Xóa các attributes không còn trong request
-                ProductAttribute::where('product_id', $product->id)
-                    ->whereNotIn('id', $existingIds)
-                    ->delete();
-            }
-
-            DB::commit();
-
-            return redirect()->route('admin.products.index')
-                ->with('success', 'Cập nhật sản phẩm thành công!');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', 'Có lỗi xảy ra: ' . $e->getMessage());
         }
+        
+        // Handle images upload
+        if ($request->hasFile('images')) {
+            $currentImageCount = $product->images()->count();
+            $newImageCount = count($request->file('images'));
+            
+            if ($currentImageCount + $newImageCount > 5) {
+                return back()->withErrors(['images' => 'Tổng số ảnh không được vượt quá 5!']);
+            }
+            
+            $isFirstImage = $currentImageCount == 0;
+            
+            foreach ($request->file('images') as $index => $image) {
+                $path = $image->store('products', 'public');
+                
+                ProductImage::create([
+                    'product_id' => $product->id,
+                    'image_url' => $path,
+                    'is_main' => $isFirstImage && $index == 0,
+                ]);
+            }
+        }
+        
+        return redirect()->route('admin.products.index')
+            ->with('success', 'Cập nhật sản phẩm thành công!');
     }
 
     public function destroy(Product $product)
@@ -239,24 +239,26 @@ class ProductController extends Controller
     }
 
     // Xóa image riêng lẻ
-    public function deleteImage($id)
+    public function deleteImage($imageId)
     {
-        $image = ProductImage::findOrFail($id);
+        $image = ProductImage::findOrFail($imageId);
+        $productId = $image->product_id;
         
-        // Không cho xóa ảnh main nếu còn ảnh khác
-        if ($image->is_main) {
-            $otherImages = ProductImage::where('product_id', $image->product_id)
-                ->where('id', '!=', $image->id)
-                ->count();
-                
-            if ($otherImages > 0) {
-                return back()->with('error', 'Vui lòng chọn ảnh chính khác trước khi xóa ảnh này!');
+        // Delete file from storage
+        Storage::disk('public')->delete($image->image_url);
+        
+        // Delete from database
+        $image->delete();
+        
+        // If deleted image was main, set first image as main
+        $product = Product::find($productId);
+        if (!$product->images()->where('is_main', true)->exists()) {
+            $firstImage = $product->images()->first();
+            if ($firstImage) {
+                $firstImage->update(['is_main' => true]);
             }
         }
-
-        Storage::disk('public')->delete($image->image_url);
-        $image->delete();
-
+        
         return back()->with('success', 'Xóa ảnh thành công!');
     }
 
