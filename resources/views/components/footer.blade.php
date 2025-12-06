@@ -35,7 +35,7 @@
             <div>
                 <h4 class="text-lg font-semibold mb-4">Liên Hệ</h4>
                 <ul class="space-y-2 text-gray-400">
-                    <li><i class="fas fa-map-marker-alt mr-2"></i>123 Nguyễn Huệ, Q.1, TP.HCM</li>
+                    <li><i class="fas fa-map-marker-alt mr-2"></i>180 Cao Lỗ, Q.8, TP.HCM</li>
                     <li><i class="fas fa-phone mr-2"></i>0123 456 789</li>
                     <li><i class="fas fa-envelope mr-2"></i>info@fashionshop.vn</li>
                 </ul>

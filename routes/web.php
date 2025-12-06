@@ -44,15 +44,17 @@ Route::middleware('auth')->prefix('checkout')->name('checkout.')->group(function
     Route::post('/process', [CheckoutController::class, 'process'])->name('process');
 });
 
-// Orders
+// Orders (cần auth)
 Route::middleware('auth')->prefix('orders')->name('order.')->group(function () {
     Route::get('/', [OrderController::class, 'index'])->name('index');
     Route::get('/{id}', [OrderController::class, 'show'])->name('show');
     Route::get('/{id}/success', [OrderController::class, 'success'])->name('success');
     Route::post('/{id}/cancel', [OrderController::class, 'cancel'])->name('cancel');
-    // ✅ SỬA: Chuyển từ GET sang POST và bỏ 'orders/' prefix vì đã có trong group
-    Route::post('/track', [OrderController::class, 'track'])->name('track');
 });
+
+// Order Tracking (không cần auth)
+Route::get('/track-order', [OrderController::class, 'showTrackForm'])->name('order.track.form');
+Route::post('/track-order', [OrderController::class, 'trackOrder'])->name('order.track.submit');
 
 // Auth
 Route::middleware('guest')->group(function () {
@@ -78,22 +80,20 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::resource('categories', AdminCategoryController::class);
 
     // Products
-    Route::resource('products', AdminProductController::class);
-    // ✅ SỬA: Đưa các route custom TRƯỚC resource routes
     Route::delete('/products/image/{id}', [AdminProductController::class, 'deleteImage'])->name('products.delete-image');
     Route::post('/products/set-main-image/{id}', [AdminProductController::class, 'setMainImage'])->name('products.set-main-image');
+    Route::resource('products', AdminProductController::class);
 
     // Orders
-    Route::resource('orders', AdminOrderController::class)->only(['index', 'show', 'destroy']);
     Route::post('/orders/{order}/update-status', [AdminOrderController::class, 'updateStatus'])->name('orders.update-status');
     Route::post('/orders/{order}/update-payment-status', [AdminOrderController::class, 'updatePaymentStatus'])->name('orders.update-payment-status');
     Route::get('/orders/{order}/print', [AdminOrderController::class, 'print'])->name('orders.print');
-    // ✅ SỬA: Thêm method POST/GET
     Route::get('/orders-export', [AdminOrderController::class, 'export'])->name('orders.export');
+    Route::resource('orders', AdminOrderController::class)->only(['index', 'show', 'destroy']);
 
     // Coupons
-    Route::resource('coupons', AdminCouponController::class);
     Route::post('/coupons/{coupon}/toggle-status', [AdminCouponController::class, 'toggleStatus'])->name('coupons.toggle-status');
+    Route::resource('coupons', AdminCouponController::class);
 
     // Users
     Route::resource('users', AdminUserController::class);

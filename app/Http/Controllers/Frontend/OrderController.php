@@ -9,11 +9,10 @@ use Illuminate\Support\Facades\Auth;
 
 class OrderController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('auth');
-    }
-
+    /**
+     * Không cần constructor middleware vì đã dùng middleware trong routes
+     */
+    
     public function index()
     {
         $orders = Order::where('user_id', Auth::id())
@@ -27,7 +26,7 @@ class OrderController extends Controller
     public function show($id)
     {
         $order = Order::where('user_id', Auth::id())
-            ->with(['orderDetails.productAttribute', 'coupon', 'paymentTransactions'])
+            ->with(['orderDetails.productAttribute.product', 'coupon', 'paymentTransactions'])
             ->findOrFail($id);
 
         return view('frontend.orders.show', compact('order'));
@@ -60,18 +59,33 @@ class OrderController extends Controller
         return back()->with('success', 'Đã hủy đơn hàng thành công!');
     }
 
-    public function track(Request $request)
+    /**
+     * Hiển thị form tracking (không cần auth - dùng cho khách)
+     */
+    public function showTrackForm()
+    {
+        return view('frontend.orders.track-form');
+    }
+
+    /**
+     * Xử lý tracking order (không cần auth - dùng cho khách)
+     */
+    public function trackOrder(Request $request)
     {
         $request->validate([
             'order_code' => 'required|string',
+            'email' => 'required|email',
         ]);
 
-        $order = Order::where('order_code', $request->order_code)->first();
+        $order = Order::where('order_code', $request->order_code)
+            ->where('customer_email', $request->email)
+            ->with(['orderDetails.productAttribute.product'])
+            ->first();
 
         if (!$order) {
-            return back()->with('error', 'Không tìm thấy đơn hàng!');
+            return back()->with('error', 'Không tìm thấy đơn hàng hoặc email không khớp!')->withInput();
         }
 
-        return view('frontend.orders.track', compact('order'));
+        return view('frontend.orders.track-result', compact('order'));
     }
 }
