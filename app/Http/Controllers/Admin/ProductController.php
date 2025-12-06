@@ -75,10 +75,10 @@ class ProductController extends Controller
                     // Lưu file vào storage/app/public/products
                     $path = $image->store('products', 'public');
                     
-                    // Lưu vào database - SỬA TỪ image_path THÀNH image_url
+                    // Lưu vào database
                     ProductImage::create([
                         'product_id' => $product->id,
-                        'image_url' => $path,  // ← ĐÃ SỬA
+                        'image_url' => $path,
                         'is_main' => ($index == $mainImageIndex) ? 1 : 0,
                     ]);
                 }
@@ -131,87 +131,128 @@ class ProductController extends Controller
 
     public function update(Request $request, $id)
     {
-        $request->validate([
+        $validated = $request->validate([
             'product_name' => 'required|string|max:191',
             'category_id' => 'required|exists:categories,id',
+            'description' => 'nullable|string',
             'base_price' => 'required|numeric|min:0',
+            'images.*' => 'nullable|image|mimes:jpg,jpeg,png,gif|max:2048',
             'attributes' => 'required|array|min:1',
+            'attributes.*.id' => 'nullable|exists:product_attributes,id',
             'attributes.*.price' => 'required|numeric|min:0',
             'attributes.*.quantity' => 'required|integer|min:0',
+            'attributes.*.size' => 'nullable|string|max:50',
+            'attributes.*.color' => 'nullable|string|max:50',
+            'attributes.*.deleted' => 'nullable|boolean',
         ]);
-        
-        $product = Product::findOrFail($id);
-        
-        // Update basic info
-        $product->update([
-            'product_name' => $request->product_name,
-            'category_id' => $request->category_id,
-            'description' => $request->description,
-            'base_price' => $request->base_price,
-        ]);
-        
-        // Handle attributes
-        $existingAttributeIds = [];
-        
-        foreach ($request->attributes as $attrData) {
-            if (isset($attrData['_destroy']) && $attrData['_destroy'] == '1') {
-                // Xóa attribute
-                if (isset($attrData['id'])) {
-                    ProductAttribute::where('id', $attrData['id'])
-                        ->where('product_id', $product->id)
-                        ->delete();
-                }
-                continue;
-            }
-            
-            if (isset($attrData['id']) && $attrData['id']) {
-                // Update attribute cũ
-                ProductAttribute::where('id', $attrData['id'])
-                    ->where('product_id', $product->id)
-                    ->update([
-                        'size' => $attrData['size'] ?? null,
-                        'color' => $attrData['color'] ?? null,
-                        'price' => $attrData['price'],
-                        'quantity' => $attrData['quantity'],
-                    ]);
-                $existingAttributeIds[] = $attrData['id'];
-            } else {
-                // Tạo attribute mới
-                $newAttr = ProductAttribute::create([
-                    'product_id' => $product->id,
-                    'size' => $attrData['size'] ?? null,
-                    'color' => $attrData['color'] ?? null,
-                    'price' => $attrData['price'],
-                    'quantity' => $attrData['quantity'],
-                ]);
-                $existingAttributeIds[] = $newAttr->id;
-            }
-        }
-        
-        // Handle images upload
-        if ($request->hasFile('images')) {
-            $currentImageCount = $product->images()->count();
-            $newImageCount = count($request->file('images'));
-            
-            if ($currentImageCount + $newImageCount > 5) {
-                return back()->withErrors(['images' => 'Tổng số ảnh không được vượt quá 5!']);
-            }
-            
-            $isFirstImage = $currentImageCount == 0;
-            
-            foreach ($request->file('images') as $index => $image) {
-                $path = $image->store('products', 'public');
+
+        try {
+            DB::beginTransaction();
+
+            $product = Product::findOrFail($id);
+
+            // Update basic info
+            $product->update([
+                'product_name' => $validated['product_name'],
+                'category_id' => $validated['category_id'],
+                'description' => $validated['description'] ?? null,
+                'base_price' => $validated['base_price'],
+            ]);
+
+            // Handle new images
+            if ($request->hasFile('images')) {
+                $currentImageCount = $product->images()->count();
+                $newImageCount = count($request->file('images'));
                 
-                ProductImage::create([
-                    'product_id' => $product->id,
-                    'image_url' => $path,
-                    'is_main' => $isFirstImage && $index == 0,
-                ]);
+                if ($currentImageCount + $newImageCount > 5) {
+                    return back()->withErrors(['images' => 'Tổng số ảnh không được vượt quá 5!']);
+                }
+                
+                $newMainImageIndex = $request->input('new_main_image_index');
+                $isFirstImage = $currentImageCount == 0;
+                
+                foreach ($request->file('images') as $index => $image) {
+                    $path = $image->store('products', 'public');
+                    
+                    // Set main image nếu được chỉ định hoặc là ảnh đầu tiên
+                    $isMain = false;
+                    if ($newMainImageIndex !== null && $index == $newMainImageIndex) {
+                        $isMain = true;
+                        // Bỏ main của các ảnh khác
+                        ProductImage::where('product_id', $product->id)->update(['is_main' => 0]);
+                    } elseif ($isFirstImage && $index == 0) {
+                        $isMain = true;
+                    }
+                    
+                    ProductImage::create([
+                        'product_id' => $product->id,
+                        'image_url' => $path,
+                        'is_main' => $isMain,
+                    ]);
+                }
             }
+
+            // Handle attributes
+            if (!empty($validated['attributes'])) {
+                \Log::info('Processing attributes:', ['attributes' => $validated['attributes']]);
+                
+                foreach ($validated['attributes'] as $index => $attrData) {
+                    \Log::info("Processing attribute index {$index}:", $attrData);
+                    
+                    // Check if marked for deletion
+                    if (isset($attrData['deleted']) && $attrData['deleted'] == '1') {
+                        \Log::info("Attribute marked for deletion", ['id' => $attrData['id'] ?? 'null']);
+                        // Only delete if it has an ID (existing record)
+                        if (!empty($attrData['id'])) {
+                            $deleted = ProductAttribute::where('id', $attrData['id'])
+                                ->where('product_id', $product->id)
+                                ->delete();
+                            \Log::info("Deleted attribute", ['id' => $attrData['id'], 'result' => $deleted]);
+                        }
+                        // Skip to next iteration
+                        continue;
+                    }
+
+                    // Update existing or create new
+                    if (!empty($attrData['id'])) {
+                        // Update existing attribute
+                        \Log::info("Updating existing attribute", ['id' => $attrData['id']]);
+                        $updated = ProductAttribute::where('id', $attrData['id'])
+                            ->where('product_id', $product->id)
+                            ->update([
+                                'size' => $attrData['size'] ?? null,
+                                'color' => $attrData['color'] ?? null,
+                                'price' => $attrData['price'],
+                                'quantity' => $attrData['quantity'],
+                            ]);
+                        \Log::info("Update result", ['affected_rows' => $updated]);
+                    } else {
+                        // Create new attribute (only if not marked for deletion)
+                        \Log::info("Creating new attribute");
+                        $newAttr = ProductAttribute::create([
+                            'product_id' => $product->id,
+                            'size' => $attrData['size'] ?? null,
+                            'color' => $attrData['color'] ?? null,
+                            'price' => $attrData['price'],
+                            'quantity' => $attrData['quantity'],
+                        ]);
+                        \Log::info("Created attribute", ['id' => $newAttr->id]);
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('admin.products.index')
+                ->with('success', 'Sản phẩm đã được cập nhật thành công!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Có lỗi xảy ra: ' . $e->getMessage());
         }
-        
-        return redirect()->route('admin.products.index')
-            ->with('success', 'Cập nhật sản phẩm thành công!');
     }
 
     public function destroy(Product $product)
@@ -221,7 +262,9 @@ class ProductController extends Controller
         try {
             // Xóa images từ storage
             foreach ($product->images as $image) {
-                Storage::disk('public')->delete($image->image_url);
+                if (Storage::disk('public')->exists($image->image_url)) {
+                    Storage::disk('public')->delete($image->image_url);
+                }
             }
 
             // Xóa product (cascade sẽ xóa images, attributes)
@@ -238,42 +281,68 @@ class ProductController extends Controller
         }
     }
 
-    // Xóa image riêng lẻ
+    /**
+     * Xóa image riêng lẻ (AJAX)
+     */
     public function deleteImage($imageId)
     {
-        $image = ProductImage::findOrFail($imageId);
-        $productId = $image->product_id;
-        
-        // Delete file from storage
-        Storage::disk('public')->delete($image->image_url);
-        
-        // Delete from database
-        $image->delete();
-        
-        // If deleted image was main, set first image as main
-        $product = Product::find($productId);
-        if (!$product->images()->where('is_main', true)->exists()) {
-            $firstImage = $product->images()->first();
-            if ($firstImage) {
-                $firstImage->update(['is_main' => true]);
+        try {
+            $image = ProductImage::findOrFail($imageId);
+            
+            // Check if this is the main image
+            if ($image->is_main) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không thể xóa ảnh chính! Vui lòng đặt ảnh khác làm ảnh chính trước.'
+                ], 400);
             }
+            
+            // Delete file from storage
+            if (Storage::disk('public')->exists($image->image_url)) {
+                Storage::disk('public')->delete($image->image_url);
+            }
+            
+            // Delete from database
+            $image->delete();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Đã xóa ảnh thành công!'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
+            ], 500);
         }
-        
-        return back()->with('success', 'Xóa ảnh thành công!');
     }
 
-    // Set main image
+    /**
+     * Set main image (AJAX)
+     */
     public function setMainImage($id)
     {
-        $image = ProductImage::findOrFail($id);
-        
-        // Bỏ main của tất cả ảnh cùng product
-        ProductImage::where('product_id', $image->product_id)
-            ->update(['is_main' => false]);
-        
-        // Set main cho ảnh này
-        $image->update(['is_main' => true]);
-
-        return back()->with('success', 'Đã đặt làm ảnh chính!');
+        try {
+            $image = ProductImage::findOrFail($id);
+            $productId = $image->product_id;
+            
+            // Remove main flag from all images of this product
+            ProductImage::where('product_id', $productId)->update(['is_main' => 0]);
+            
+            // Set this image as main
+            $image->update(['is_main' => 1]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Đã đặt làm ảnh chính!'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
