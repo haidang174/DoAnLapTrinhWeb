@@ -109,7 +109,7 @@ class OrderController extends Controller
 
     public function print(Order $order)
     {
-        $order->load(['orderDetails.productAttribute.product']);
+        $order->load(['orderDetails.productAttribute.product', 'coupon']);
         return view('admin.orders.print', compact('order'));
     }
 
