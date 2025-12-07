@@ -13,32 +13,32 @@ class OrderController extends Controller
         $query = Order::with(['user']);
 
         // Lọc theo trạng thái
-        if ($request->has('status') && $request->status != '') {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
         // Lọc theo payment_status
-        if ($request->has('payment_status') && $request->payment_status != '') {
+        if ($request->filled('payment_status')) {
             $query->where('payment_status', $request->payment_status);
         }
 
         // Tìm kiếm
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('order_code', 'like', '%' . $search . '%')
-                  ->orWhere('customer_name', 'like', '%' . $search . '%')
-                  ->orWhere('customer_email', 'like', '%' . $search . '%')
-                  ->orWhere('customer_phone', 'like', '%' . $search . '%');
+                ->orWhere('customer_name', 'like', '%' . $search . '%')
+                ->orWhere('customer_email', 'like', '%' . $search . '%')
+                ->orWhere('customer_phone', 'like', '%' . $search . '%');
             });
         }
 
         // Lọc theo ngày
-        if ($request->has('date_from')) {
+        if ($request->filled('date_from')) {
             $query->whereDate('created_at', '>=', $request->date_from);
         }
 
-        if ($request->has('date_to')) {
+        if ($request->filled('date_to')) {
             $query->whereDate('created_at', '<=', $request->date_to);
         }
 
