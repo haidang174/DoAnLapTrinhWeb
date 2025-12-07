@@ -69,41 +69,75 @@ class AuthController extends Controller
         return redirect('/')->with('success', 'Đã đăng xuất!');
     }
 
-    // Google Login
+    // ============================================================
+    // GOOGLE LOGIN
+    // ============================================================
+    
+    /**
+     * Redirect người dùng đến Google để đăng nhập
+     * 
+     * LOCAL: Tắt SSL verification vì WAMP không có cacert.pem
+     * PRODUCTION: Xóa phần setHttpClient() khi deploy lên server
+     */
     public function redirectToGoogle()
     {
-        return Socialite::driver('google')->redirect();
+        $socialite = Socialite::driver('google');
+        
+        // CHỈ DÙNG CHO LOCAL DEVELOPMENT
+        // KHI DEPLOY LÊN PRODUCTION: Xóa 3 dòng bên dưới
+        if (config('app.env') === 'local') {
+            $socialite->setHttpClient(new \GuzzleHttp\Client(['verify' => false]));
+        }
+        
+        return $socialite->redirect();
     }
 
+    /**
+     * Xử lý callback từ Google sau khi user đăng nhập
+     * 
+     * LOCAL: Tắt SSL verification
+     * PRODUCTION: Xóa phần setHttpClient() khi deploy
+     */
     public function handleGoogleCallback()
     {
         try {
-            $googleUser = Socialite::driver('google')->user();
+            $socialite = Socialite::driver('google');
+            
+            // CHỈ DÙNG CHO LOCAL DEVELOPMENT
+            // KHI DEPLOY LÊN PRODUCTION: Xóa 3 dòng bên dưới
+            if (config('app.env') === 'local') {
+                $socialite->setHttpClient(new \GuzzleHttp\Client(['verify' => false]));
+            }
+            
+            $googleUser = $socialite->user();
 
+            // Tìm user theo email
             $user = User::where('email', $googleUser->email)->first();
 
             if ($user) {
-                // Cập nhật google_id nếu chưa có
+                // User đã tồn tại, cập nhật google_id nếu chưa có
                 if (!$user->google_id) {
                     $user->google_id = $googleUser->id;
                     $user->save();
                 }
             } else {
-                // Tạo user mới
+                // Tạo user mới từ thông tin Google
                 $user = User::create([
                     'name' => $googleUser->name,
                     'email' => $googleUser->email,
                     'google_id' => $googleUser->id,
-                    'password' => null, // Google login không cần password
+                    'password' => null, // Google users không cần password
                 ]);
             }
 
+            // Đăng nhập user
             Auth::login($user);
 
             return redirect('/')->with('success', 'Đăng nhập Google thành công!');
 
         } catch (\Exception $e) {
-            return redirect('/login')->with('error', 'Có lỗi xảy ra khi đăng nhập Google!');
+            \Log::error('Google Login Error: ' . $e->getMessage());
+            return redirect('/login')->with('error', 'Có lỗi xảy ra khi đăng nhập với Google. Vui lòng thử lại!');
         }
     }
 }
