@@ -55,7 +55,7 @@ class UserController extends Controller
     public function show(User $user)
     {
         $user->load(['orders' => function($query) {
-            $query->latest()->paginate(10);
+            $query->latest()->take(10);
         }]);
         
         return view('admin.users.show', compact('user'));
@@ -72,11 +72,13 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'password' => 'nullable|string|min:8|confirmed',
+            'is_admin' => 'nullable|boolean',
         ]);
 
         $data = [
             'name' => $request->name,
             'email' => $request->email,
+            'is_admin' => $request->has('is_admin'),
         ];
 
         if ($request->filled('password')) {
