@@ -61,7 +61,15 @@ class Product extends Model
 
     public function getMainImageUrlAttribute()
     {
-        return $this->mainImage?->image_url ?? 'default-product.jpg';
+        // Thêm asset('storage/...')
+        $mainImage = $this->mainImage;
+        
+        if ($mainImage && $mainImage->image_url) {
+            return asset('storage/' . $mainImage->image_url);
+        }
+        
+        // Trả về ảnh mặc định nếu không có ảnh
+        return asset('images/default-product.jpg');
     }
 
     public function inStock()
