@@ -14,6 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
         ]);
+
+        // Tắt CSRF cho MoMo notify URL
+        $middleware->validateCsrfTokens(except: [
+            'payment/momo/notify'
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

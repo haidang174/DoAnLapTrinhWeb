@@ -41,6 +41,15 @@ class OrderController extends Controller
         return view('frontend.orders.success', compact('order'));
     }
 
+    public function failed($id)
+    {
+        $order = Order::where('user_id', Auth::id())
+            ->with(['orderDetails'])
+            ->findOrFail($id);
+
+        return view('frontend.orders.failed', compact('order'));
+    }
+
     public function cancel($id)
     {
         $order = Order::where('user_id', Auth::id())->findOrFail($id);

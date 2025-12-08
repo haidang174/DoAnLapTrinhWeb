@@ -8,6 +8,7 @@ use App\Http\Controllers\Frontend\CheckoutController;
 use App\Http\Controllers\Frontend\OrderController;
 use App\Http\Controllers\Frontend\AuthController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Frontend\MoMoController;
 use App\Http\Controllers\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Admin\ProductController as AdminProductController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
@@ -49,12 +50,17 @@ Route::middleware('auth')->prefix('orders')->name('order.')->group(function () {
     Route::get('/', [OrderController::class, 'index'])->name('index');
     Route::get('/{id}', [OrderController::class, 'show'])->name('show');
     Route::get('/{id}/success', [OrderController::class, 'success'])->name('success');
+    Route::get('/{id}/failed', [OrderController::class, 'failed'])->name('failed');
     Route::post('/{id}/cancel', [OrderController::class, 'cancel'])->name('cancel');
 });
 
 // Order Tracking (không cần auth)
 Route::get('/track-order', [OrderController::class, 'showTrackForm'])->name('order.track.form');
 Route::post('/track-order', [OrderController::class, 'trackOrder'])->name('order.track.submit');
+
+// MoMo Payment Routes
+Route::get('/payment/momo/return', [MoMoController::class, 'return'])->name('momo.return');
+Route::post('/payment/momo/notify', [MoMoController::class, 'notify'])->name('momo.notify');
 
 // Auth
 Route::middleware('guest')->group(function () {
