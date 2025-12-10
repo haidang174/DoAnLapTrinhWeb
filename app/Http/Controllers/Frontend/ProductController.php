@@ -6,50 +6,48 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
     public function index(Request $request)
     {
+        // Kiểm tra xem có sắp xếp theo giá không
+        $sort = $request->get('sort', 'latest');
+        $isPriceSort = in_array($sort, ['price_asc', 'price_desc']);
+
+        // Nếu sắp xếp theo giá, sử dụng query đặc biệt
+        if ($isPriceSort) {
+            return $this->indexWithPriceSort($request);
+        }
+
+        // Query thông thường cho các trường hợp khác
         $query = Product::with(['category', 'mainImage', 'attributes']);
 
         // Lọc theo category
-        if ($request->has('category')) {
+        if ($request->filled('category')) {
             $query->where('category_id', $request->category);
         }
 
         // Tìm kiếm
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $query->where('product_name', 'like', '%' . $request->search . '%');
         }
 
         // Lọc theo giá
-        if ($request->has('min_price')) {
+        if ($request->filled('min_price') || $request->filled('max_price')) {
             $query->whereHas('attributes', function ($q) use ($request) {
-                $q->where('price', '>=', $request->min_price);
-            });
-        }
-
-        if ($request->has('max_price')) {
-            $query->whereHas('attributes', function ($q) use ($request) {
-                $q->where('price', '<=', $request->max_price);
+                if ($request->filled('min_price')) {
+                    $q->where('price', '>=', $request->min_price);
+                }
+                if ($request->filled('max_price')) {
+                    $q->where('price', '<=', $request->max_price);
+                }
             });
         }
 
         // Sắp xếp
-        switch ($request->get('sort', 'latest')) {
-            case 'price_asc':
-                $query->join('product_attributes', 'products.id', '=', 'product_attributes.product_id')
-                    ->orderBy('product_attributes.price', 'asc')
-                    ->select('products.*')
-                    ->distinct();
-                break;
-            case 'price_desc':
-                $query->join('product_attributes', 'products.id', '=', 'product_attributes.product_id')
-                    ->orderBy('product_attributes.price', 'desc')
-                    ->select('products.*')
-                    ->distinct();
-                break;
+        switch ($sort) {
             case 'name':
                 $query->orderBy('product_name', 'asc');
                 break;
@@ -57,7 +55,62 @@ class ProductController extends Controller
                 $query->latest();
         }
 
-        $products = $query->paginate(12);
+        $products = $query->paginate(12)->appends($request->except('page'));
+        $categories = Category::withCount('products')->get();
+
+        return view('frontend.products.index', compact('products', 'categories'));
+    }
+
+    /**
+     * Xử lý riêng cho sắp xếp theo giá
+     */
+    private function indexWithPriceSort(Request $request)
+    {
+        $direction = $request->get('sort') === 'price_asc' ? 'asc' : 'desc';
+
+        // Tạo query cơ bản
+        $query = Product::query()
+            ->select('products.*')
+            ->selectSub(
+                'SELECT MIN(price) FROM product_attributes WHERE product_attributes.product_id = products.id',
+                'min_price'
+            );
+
+        // Lọc theo category
+        if ($request->filled('category')) {
+            $query->where('products.category_id', $request->category);
+        }
+
+        // Tìm kiếm
+        if ($request->filled('search')) {
+            $query->where('products.product_name', 'like', '%' . $request->search . '%');
+        }
+
+        // Lọc theo giá
+        if ($request->filled('min_price') || $request->filled('max_price')) {
+            $query->whereExists(function ($q) use ($request) {
+                $q->select(DB::raw(1))
+                    ->from('product_attributes')
+                    ->whereColumn('product_attributes.product_id', 'products.id');
+                
+                if ($request->filled('min_price')) {
+                    $q->where('product_attributes.price', '>=', $request->min_price);
+                }
+                if ($request->filled('max_price')) {
+                    $q->where('product_attributes.price', '<=', $request->max_price);
+                }
+            });
+        }
+
+        // Sắp xếp theo giá
+        $query->orderBy('min_price', $direction);
+
+        // Lấy kết quả và load relationships
+        $products = $query->paginate(12)->appends($request->except('page'));
+        
+        // Load relationships sau khi paginate
+        $products->load(['category', 'mainImage', 'attributes']);
+
         $categories = Category::withCount('products')->get();
 
         return view('frontend.products.index', compact('products', 'categories'));
