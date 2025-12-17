@@ -176,21 +176,22 @@
     
     <!-- Related Products -->
     @if($relatedProducts->count() > 0)
-        <div class="mb-8">
-            <h2 class="text-2xl font-bold mb-6">Sản Phẩm Liên Quan</h2>
-            
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                @foreach($relatedProducts as $relatedProduct)
-                    <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition group">
-                        <a href="{{ route('products.show', $relatedProduct->id) }}">
-                            <div class="relative overflow-hidden">
-                                <img src="{{ $relatedProduct->main_image_url }}" 
-                                     alt="{{ $relatedProduct->product_name }}"
-                                     class="w-full h-64 object-cover group-hover:scale-110 transition duration-300">
-                            </div>
-                            
-                            <div class="p-4"></div>
+    <div class="mb-8">
+        <h2 class="text-2xl font-bold mb-6">Sản Phẩm Liên Quan</h2>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            @foreach($relatedProducts as $relatedProduct)
+                <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition group">
+                    <a href="{{ route('products.show', $relatedProduct->id) }}">
+                        <div class="relative overflow-hidden">
+                            <img src="{{ $relatedProduct->main_image_url }}" 
+                                 alt="{{ $relatedProduct->product_name }}"
+                                 class="w-full h-64 object-cover group-hover:scale-110 transition duration-300">
+                        </div>
+                        
+                        <div class="p-4">
                             <h3 class="font-semibold text-gray-800 mb-2 line-clamp-2">{{ $relatedProduct->product_name }}</h3>
+                            
                             @php
                                 $minPrice = $relatedProduct->attributes->min('price');
                                 $maxPrice = $relatedProduct->attributes->max('price');
@@ -209,6 +210,6 @@
             @endforeach
         </div>
     </div>
-    @endif
+@endif
 </div>
 @endsection
